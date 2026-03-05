@@ -69,12 +69,18 @@ export async function generateReply(
       })),
   ];
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o",
-    messages: openaiMessages,
-    max_tokens: 500,
-    temperature: 0.7,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const completion = await getOpenAI().chat.completions.create(
+    {
+      model: "gpt-4o",
+      messages: openaiMessages,
+      max_tokens: 500,
+      temperature: 0.7,
+    },
+    { signal: controller.signal }
+  );
+  clearTimeout(timeoutId);
 
   const reply = completion.choices[0]?.message?.content?.trim();
   if (!reply) {
