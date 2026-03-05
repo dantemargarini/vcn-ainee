@@ -24,7 +24,7 @@ Reply STOP to unsubscribe.`;
 const DEFAULT_PHONES = ["6197918675", "6198693700"];
 
 async function sendToPhones(phones: string[]) {
-  const results: { phone: string; ok: boolean; error?: string }[] = [];
+  const results: { phone: string; ok: boolean; error?: string; ghl_response?: unknown }[] = [];
   for (const phone of phones) {
     try {
       const contactId = await upsertContact(phone, {
