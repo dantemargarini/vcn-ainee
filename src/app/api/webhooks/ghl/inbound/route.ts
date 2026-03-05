@@ -108,13 +108,9 @@ export async function POST(req: Request) {
     let { contactId, conversationId, messageBody, locationId } = parsed;
     const resolvedConversationId = await getConversationIdIfMissing(contactId, conversationId, locationId);
     if (!resolvedConversationId) {
-      console.log("[inbound] Rejected: no conversationId for contact", contactId);
-      return NextResponse.json(
-        { ok: false, error: "Could not determine conversationId. Add Custom Data in workflow: conversationId = {{conversation.id}} or similar." },
-        { status: 400 }
-      );
+      console.log("[inbound] No conversationId for contact", contactId, "- replying with current message only (no history)");
     }
-    conversationId = resolvedConversationId;
+    conversationId = resolvedConversationId ?? "";
 
     // 1) STOP handling: set DND, move to DND stage, do not reply
     if (isStopMessage(messageBody)) {
@@ -220,24 +216,26 @@ export async function POST(req: Request) {
       ? new Date(leadRowForReset.conversation_reset_at).getTime()
       : null;
 
-    // 6) Conversation history from GHL (filter by reset_at if set)
-    const rawMessages = await getConversationMessages(conversationId, locationId);
-    const toTime = (m: Record<string, unknown>) => {
-      const v = m.createdAt ?? m.dateAdded ?? 0;
-      return new Date(typeof v === "string" || typeof v === "number" ? v : 0).getTime();
-    };
-    const sorted = [...(Array.isArray(rawMessages) ? rawMessages : [])].sort(
-      (a, b) => toTime(a as Record<string, unknown>) - toTime(b as Record<string, unknown>)
-    );
-    const messages: ConversationMessage[] = [];
-    for (const m of sorted) {
-      const msg = m as Record<string, unknown>;
-      const msgTime = toTime(msg);
-      if (resetAt != null && msgTime < resetAt) continue;
-      const content = (msg.body ?? msg.message ?? msg.text ?? "").toString();
-      const direction = (msg.direction ?? msg.type ?? "inbound").toString().toLowerCase();
-      const role = direction === "inbound" ? "user" : "assistant";
-      messages.push({ role, content });
+    // 6) Conversation history from GHL (filter by reset_at if set), or just current message if no conversationId
+    let messages: ConversationMessage[] = [];
+    if (conversationId.trim()) {
+      const rawMessages = await getConversationMessages(conversationId, locationId);
+      const toTime = (m: Record<string, unknown>) => {
+        const v = m.createdAt ?? m.dateAdded ?? 0;
+        return new Date(typeof v === "string" || typeof v === "number" ? v : 0).getTime();
+      };
+      const sorted = [...(Array.isArray(rawMessages) ? rawMessages : [])].sort(
+        (a, b) => toTime(a as Record<string, unknown>) - toTime(b as Record<string, unknown>)
+      );
+      for (const m of sorted) {
+        const msg = m as Record<string, unknown>;
+        const msgTime = toTime(msg);
+        if (resetAt != null && msgTime < resetAt) continue;
+        const content = (msg.body ?? msg.message ?? msg.text ?? "").toString();
+        const direction = (msg.direction ?? msg.type ?? "inbound").toString().toLowerCase();
+        const role = direction === "inbound" ? "user" : "assistant";
+        messages.push({ role, content });
+      }
     }
     messages.push({ role: "user", content: messageBody });
 
