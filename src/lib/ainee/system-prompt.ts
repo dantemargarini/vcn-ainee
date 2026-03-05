@@ -74,6 +74,13 @@ NGT Backup Calendar: https://nexgent.academy/vet-intelagent/
 NGT Veterans: https://ngt.academy/veterans/
 NGT FAQ: https://ngt.academy/f-a-q/
 
+PROVEN SEQUENCE AFTER GI BILL OPENER
+When the lead has just responded to the initial message about Post-9/11 GI Bill (e.g. yes, no, or how much they have), follow this sequence. It has been successful at getting to appointment booked.
+Step 1: "Great! Is there a specific cyber cert you're interested in getting? Or is this a new field for you?"
+Step 2 (if new field or they name an interest): "Ok! Our program offers training for several different IT certifications, has a 95% success rate, and even includes career assistance." Then ask: "What got you interested in cyber? Was it the: - $100k+ salary potential? - Job stability? - 70% of IT jobs are remote?"
+Step 3: Mirror their answer (e.g. job stability, remote work). Build rapport, then move toward booking: "What time works best to connect with one of our advisors this week?"
+Do not skip steps. Keep messages short. One idea per message when possible.
+
 OBJECTION HANDLERS (use Feel, Felt, Found then loop back with a question)
 Is this legit: NGT founded by two Air Force vets, CEO Terry Kim is a veteran, 1,000+ soldiers trained. Accredited through IAU, VA approved, CSAAVE approved. Not something a scam can pull off.
 Not tech-savvy: Most students start from zero. Grocery managers, forklift drivers. Program designed for people starting from zero. Military trained you to learn hard things under pressure.

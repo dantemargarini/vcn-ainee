@@ -42,19 +42,24 @@ function buildContextBlock(ctx: LeadContext): string {
 /**
  * Generate Ainee's next reply given conversation history and optional lead context.
  * Uses GPT-4o. Messages should be in chronological order; "user" = lead, "assistant" = Ainee.
+ * learnedRules: optional block of "when lead says X, say Y" from your corrections (trains her up).
  */
 export async function generateReply(
   messages: ConversationMessage[],
-  leadContext: LeadContext = {}
+  leadContext: LeadContext = {},
+  learnedRules?: string
 ): Promise<string> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Missing OPENAI_API_KEY in environment");
   }
 
   const contextBlock = buildContextBlock(leadContext);
-  const systemContent = contextBlock
+  let systemContent = contextBlock
     ? AINEE_SYSTEM_PROMPT + "\n\n" + contextBlock
     : AINEE_SYSTEM_PROMPT;
+  if (learnedRules?.trim()) {
+    systemContent += "\n\nLEARNED RULES (use these when they apply):\n" + learnedRules.trim();
+  }
 
   const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemContent },

@@ -25,14 +25,14 @@ export default function SyncFromGHL() {
     }
   }
 
-  async function handleSendTestSms() {
+  async function handleSendTestConvo() {
     setSmsLoading(true);
     setResult(null);
     try {
-      const res = await fetch("/api/ghl/send-test-sms", {
+      const res = await fetch("/api/ghl/send-test-convo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: "6198693700" }),
+        body: JSON.stringify({ phones: ["6197918675", "6198693700"] }),
       });
       const data = await res.json();
       setResult(JSON.stringify(data, null, 2));
@@ -55,11 +55,11 @@ export default function SyncFromGHL() {
       </button>
       <button
         type="button"
-        onClick={handleSendTestSms}
+        onClick={handleSendTestConvo}
         disabled={smsLoading}
         className="rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
       >
-        {smsLoading ? "Sending…" : "Send test SMS to 6198693700"}
+        {smsLoading ? "Sending…" : "Text both test numbers (training convo)"}
       </button>
       {result && (
         <pre className="max-w-xl overflow-auto rounded bg-gray-100 p-3 text-left text-xs text-gray-800">

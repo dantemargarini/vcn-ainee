@@ -3,11 +3,23 @@
  * POST /api/ghl/send-test-convo — body: { "phones": ["6197918675", "6198693700"] }
  */
 import { NextResponse } from "next/server";
-import { upsertContact, sendSms } from "@/lib/ghl";
+import { upsertContact, getContact, sendSms } from "@/lib/ghl";
 
 const LOCATION_ID = process.env.GHL_LOCATION_ID!;
 
-const TEST_CONVO_OPENER = `Hey there! This is Ainee with Veteran Career Networks. You asked about our cybersecurity program for veterans, so I wanted to reach out. You could be earning $80K to $120K in a remote role within 6 months using benefits you have already earned. What would be most useful for you to know first, the GI Bill side, the timeline, or what the day to day looks like? Ainee. Veteran Career Networks. Reply STOP to unsubscribe.`;
+function buildOpener(firstName?: string | null): string {
+  const name = firstName?.trim() || "there";
+  return `Hey ${name}, this is Ainee with Veteran Career Networks. You requested information about our cybersecurity training program for Veterans.
+
+Are you currently using your Post-9/11 GI Bill benefits?
+
+
+Best,
+Ainee
+Veteran Careers Network
+Veteran-Owned Business
+Reply STOP to unsubscribe.`;
+}
 
 const DEFAULT_PHONES = ["6197918675", "6198693700"];
 
@@ -20,8 +32,11 @@ async function sendToPhones(phones: string[]) {
         firstName: "Test",
         lastName: "Lead",
       });
-      await sendSms(contactId, TEST_CONVO_OPENER, LOCATION_ID);
-      results.push({ phone, ok: true });
+      const contact = await getContact(contactId, LOCATION_ID);
+      const firstName = (contact as { firstName?: string })?.firstName;
+      const message = buildOpener(firstName);
+      const smsResponse = await sendSms(contactId, message, LOCATION_ID);
+      results.push({ phone, ok: true, ghl_response: smsResponse });
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       results.push({ phone, ok: false, error: err });

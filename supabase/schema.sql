@@ -18,6 +18,7 @@ create table if not exists public.leads (
   last_reply_at timestamptz,
   dnd boolean default false,
   ghl_owner_id text,
+  conversation_reset_at timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -63,6 +64,21 @@ create table if not exists public.audit_logs (
   created_at timestamptz default now()
 );
 
+create table if not exists public.ainee_corrections (
+  id uuid primary key default gen_random_uuid(),
+  trigger_text text not null,
+  preferred_response text not null,
+  active boolean default true,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.readiness_approvals (
+  id uuid primary key default gen_random_uuid(),
+  phone text unique not null,
+  ghl_contact_id text,
+  approved_at timestamptz default now()
+);
+
 create table if not exists public.reengagement_log (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid references public.leads(id) on delete set null,
@@ -84,6 +100,7 @@ create index if not exists idx_stage_history_lead_id on public.stage_history(lea
 create index if not exists idx_rep_notes_lead_id on public.rep_notes(lead_id);
 create index if not exists idx_audit_logs_created_at on public.audit_logs(created_at);
 create index if not exists idx_reengagement_log_sent_at on public.reengagement_log(sent_at);
+create index if not exists idx_ainee_corrections_active on public.ainee_corrections(active);
 
 -- 3. ROW LEVEL SECURITY (drop old policies first so you can re-run this script)
 
@@ -92,6 +109,8 @@ alter table public.stage_history enable row level security;
 alter table public.conversations enable row level security;
 alter table public.rep_notes enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.ainee_corrections enable row level security;
+alter table public.readiness_approvals enable row level security;
 alter table public.reengagement_log enable row level security;
 
 drop policy if exists "Allow all for anon on leads" on public.leads;
@@ -99,6 +118,8 @@ drop policy if exists "Allow all for anon on stage_history" on public.stage_hist
 drop policy if exists "Allow all for anon on conversations" on public.conversations;
 drop policy if exists "Allow all for anon on rep_notes" on public.rep_notes;
 drop policy if exists "Allow all for anon on audit_logs" on public.audit_logs;
+drop policy if exists "Allow all for anon on ainee_corrections" on public.ainee_corrections;
+drop policy if exists "Allow all for anon on readiness_approvals" on public.readiness_approvals;
 drop policy if exists "Allow all for anon on reengagement_log" on public.reengagement_log;
 
 create policy "Allow all for anon on leads" on public.leads for all using (true) with check (true);
@@ -106,4 +127,6 @@ create policy "Allow all for anon on stage_history" on public.stage_history for 
 create policy "Allow all for anon on conversations" on public.conversations for all using (true) with check (true);
 create policy "Allow all for anon on rep_notes" on public.rep_notes for all using (true) with check (true);
 create policy "Allow all for anon on audit_logs" on public.audit_logs for all using (true) with check (true);
+create policy "Allow all for anon on ainee_corrections" on public.ainee_corrections for all using (true) with check (true);
+create policy "Allow all for anon on readiness_approvals" on public.readiness_approvals for all using (true) with check (true);
 create policy "Allow all for anon on reengagement_log" on public.reengagement_log for all using (true) with check (true);

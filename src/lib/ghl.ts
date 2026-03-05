@@ -195,6 +195,9 @@ export async function sendSms(
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || `GHL send SMS: ${res.status}`);
+  if (!res.ok) {
+    const msg = data.message || data.error || (typeof data === "object" ? JSON.stringify(data) : `GHL send SMS: ${res.status}`);
+    throw new Error(msg);
+  }
   return data;
 }

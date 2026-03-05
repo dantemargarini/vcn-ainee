@@ -31,7 +31,7 @@ function isWithinMessagingWindow(): boolean {
   return totalMins >= start && totalMins < end;
 }
 
-/** Normalize inbound webhook body (GHL may send camelCase or snake_case). */
+/** Normalize inbound webhook body (GHL may send camelCase or snake_case; workflow may send nested message). */
 function parseInboundBody(body: unknown): {
   contactId: string;
   conversationId: string;
@@ -40,17 +40,39 @@ function parseInboundBody(body: unknown): {
 } | null {
   if (!body || typeof body !== "object") return null;
   const b = body as Record<string, unknown>;
-  const contactId = (b.contactId ?? b.contact_id) as string | undefined;
-  const conversationId = (b.conversationId ?? b.conversation_id) as string | undefined;
-  const messageBody = (b.body ?? b.message) as string | undefined;
+  const contactId = (b.contactId ?? b.contact_id ?? b.id) as string | undefined;
+  let conversationId = (b.conversationId ?? b.conversation_id) as string | undefined;
+  let messageBody: string | undefined = (b.body ?? b.message) as string | undefined;
   const locationId = (b.locationId ?? b.location_id) as string | undefined;
-  if (!contactId || !conversationId || messageBody == null) return null;
+  const loc = locationId || LOCATION_ID;
+  if (!messageBody && b.message && typeof b.message === "object") {
+    const msg = b.message as Record<string, unknown>;
+    messageBody = (msg.body ?? msg.message ?? msg.text) as string | undefined;
+  }
+  if (b.location && typeof b.location === "object") {
+    const locObj = b.location as Record<string, unknown>;
+    if (!locationId && locObj.id) return parseInboundBody({ ...b, locationId: locObj.id });
+  }
+  if (!contactId || messageBody == null) return null;
   return {
     contactId,
-    conversationId,
+    conversationId: conversationId ?? "",
     messageBody: String(messageBody).trim(),
-    locationId: locationId || LOCATION_ID,
+    locationId: loc,
   };
+}
+
+/** Get conversationId from contact if missing (e.g. workflow payload). */
+async function getConversationIdIfMissing(
+  contactId: string,
+  conversationId: string,
+  locationId: string
+): Promise<string | null> {
+  if (conversationId && conversationId.trim()) return conversationId;
+  const contact = await getContact(contactId, locationId);
+  const c = contact as Record<string, unknown>;
+  const convId = (c.conversationId ?? c.conversation_id) as string | undefined;
+  return convId && String(convId).trim() ? convId : null;
 }
 
 /** Detect STOP / opt-out. */
@@ -59,14 +81,36 @@ function isStopMessage(text: string): boolean {
   return t === "stop" || t === "stop." || t === "unsubscribe" || t === "opt out" || t.startsWith("stop ");
 }
 
+/** Test numbers that can approve "ainee is ready" (10 digits). */
+const READINESS_TEST_PHONES = ["6197918675", "6198693700"];
+
+function normalizePhone10(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  if (digits.length === 10) return digits;
+  return digits.slice(-10);
+}
+
+function isReadinessMessage(text: string): boolean {
+  return text.trim().toLowerCase().includes("ainee is ready");
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const parsed = parseInboundBody(body);
     if (!parsed) {
-      return NextResponse.json({ ok: false, error: "Missing contactId, conversationId, or body" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Missing contactId or message body" }, { status: 400 });
     }
-    const { contactId, conversationId, messageBody, locationId } = parsed;
+    let { contactId, conversationId, messageBody, locationId } = parsed;
+    const resolvedConversationId = await getConversationIdIfMissing(contactId, conversationId, locationId);
+    if (!resolvedConversationId) {
+      return NextResponse.json(
+        { ok: false, error: "Could not determine conversationId. Add Custom Data in workflow: conversationId = {{conversation.id}} or similar." },
+        { status: 400 }
+      );
+    }
+    conversationId = resolvedConversationId;
 
     // 1) STOP handling: set DND, move to DND stage, do not reply
     if (isStopMessage(messageBody)) {
@@ -89,8 +133,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action: "DND" });
     }
 
-    // 2) Messaging window: do not send reply outside 8:30 AM - 8:00 PM EST
-    if (!isWithinMessagingWindow()) {
+    // 2) Messaging window: do not send reply outside 8:30 AM - 8:00 PM EST (except test numbers)
+    const contactForWindow = await getContact(contactId, locationId);
+    const conForWindow = contactForWindow as Record<string, unknown>;
+    const rawPhoneForWindow = (conForWindow.phone ?? "").toString();
+    const phone10ForWindow = normalizePhone10(rawPhoneForWindow);
+    const isTestNumber = READINESS_TEST_PHONES.includes(phone10ForWindow);
+
+    if (!isTestNumber && !isWithinMessagingWindow()) {
       await supabase.from("conversations").insert({
         ghl_contact_id: contactId,
         body: messageBody,
@@ -99,6 +149,41 @@ export async function POST(req: Request) {
         created_at: new Date().toISOString(),
       });
       return NextResponse.json({ ok: true, action: "logged_only_outside_window" });
+    }
+
+    // 2b) "Ainee is ready" from test numbers: track readiness, only go live when both have said it
+    if (isReadinessMessage(messageBody)) {
+      const contact = await getContact(contactId, locationId);
+      const con = contact as Record<string, unknown>;
+      const rawPhone = (con.phone ?? "").toString();
+      const phone10 = normalizePhone10(rawPhone);
+      if (READINESS_TEST_PHONES.includes(phone10)) {
+        await supabase.from("readiness_approvals").upsert(
+          { phone: phone10, ghl_contact_id: contactId, approved_at: new Date().toISOString() },
+          { onConflict: "phone" }
+        );
+        const { data: approvals } = await supabase.from("readiness_approvals").select("phone, approved_at");
+        const count = Array.isArray(approvals) ? approvals.length : 0;
+        const bothApproved = count >= 2;
+        const replyText = bothApproved
+          ? "Both testers have approved. Ainee is ready for go-live. You can start using her for real leads. Ainee."
+          : "Got it. You are marked as ready. Waiting for the other tester to text 'ainee is ready'.";
+        await sendSms(contactId, replyText, locationId);
+        if (bothApproved) {
+          await supabase.from("audit_logs").insert({
+            log_type: "ainee_go_live",
+            payload: { message: "Both testers approved", approvals: approvals ?? [] },
+          });
+        }
+        await supabase.from("conversations").insert({
+          ghl_contact_id: contactId,
+          body: messageBody,
+          direction: "inbound",
+          from_type: "lead",
+          created_at: new Date().toISOString(),
+        });
+        return NextResponse.json({ ok: true, action: "readiness", both_approved: bothApproved });
+      }
     }
 
     // 3) Pre-check: contact and DND
@@ -121,7 +206,17 @@ export async function POST(req: Request) {
     const firstName = (con.firstName ?? con.name ?? "") as string;
     const lastName = (con.lastName ?? "") as string;
 
-    // 5) Conversation history from GHL
+    // 5) Lead row for conversation_reset_at (only use messages after this time)
+    const { data: leadRowForReset } = await supabase
+      .from("leads")
+      .select("conversation_reset_at")
+      .eq("ghl_contact_id", contactId)
+      .single();
+    const resetAt = leadRowForReset?.conversation_reset_at
+      ? new Date(leadRowForReset.conversation_reset_at).getTime()
+      : null;
+
+    // 6) Conversation history from GHL (filter by reset_at if set)
     const rawMessages = await getConversationMessages(conversationId, locationId);
     const sorted = [...(Array.isArray(rawMessages) ? rawMessages : [])].sort(
       (a, b) =>
@@ -131,6 +226,8 @@ export async function POST(req: Request) {
     const messages: ConversationMessage[] = [];
     for (const m of sorted) {
       const msg = m as Record<string, unknown>;
+      const msgTime = new Date((msg.createdAt ?? msg.dateAdded ?? 0)).getTime();
+      if (resetAt != null && msgTime < resetAt) continue;
       const content = (msg.body ?? msg.message ?? msg.text ?? "").toString();
       const direction = (msg.direction ?? msg.type ?? "inbound").toString().toLowerCase();
       const role = direction === "inbound" ? "user" : "assistant";
@@ -145,11 +242,26 @@ export async function POST(req: Request) {
       lastReplyAt: new Date().toISOString(),
     };
 
-    // 6) Generate and send reply
-    const reply = await generateReply(messages, leadContext);
+    // 7) Learned rules from corrections (train Ainee up)
+    const { data: corrections } = await supabase
+      .from("ainee_corrections")
+      .select("trigger_text, preferred_response")
+      .eq("active", true);
+    const learnedRules =
+      Array.isArray(corrections) && corrections.length > 0
+        ? corrections
+            .map(
+              (c: { trigger_text: string; preferred_response: string }) =>
+                `When lead says something like: "${(c.trigger_text || "").slice(0, 200)}" -> Ainee should say: "${(c.preferred_response || "").slice(0, 300)}"`
+            )
+            .join("\n")
+        : undefined;
+
+    // 8) Generate and send reply
+    const reply = await generateReply(messages, leadContext, learnedRules);
     await sendSms(contactId, reply, locationId);
 
-    // 7) Log to Supabase
+    // 9) Log to Supabase
     const now = new Date().toISOString();
     await supabase.from("conversations").insert([
       { ghl_contact_id: contactId, body: messageBody, direction: "inbound", from_type: "lead", created_at: now },
@@ -170,7 +282,7 @@ export async function POST(req: Request) {
         .eq("id", leadRow.id);
     }
 
-    // Move opportunity to Sale in Progress when lead replies
+    // 10) Move opportunity to Sale in Progress when lead replies
     if (opp?.id && currentStage !== "Sale in Progress") {
       const sipStage = stages.find((s: { name: string }) => s.name === "Sale in Progress");
       if (sipStage?.id) {
