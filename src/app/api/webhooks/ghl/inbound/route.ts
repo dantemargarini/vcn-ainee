@@ -98,13 +98,17 @@ function isReadinessMessage(text: string): boolean {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+    const b = body as Record<string, unknown>;
+    console.log("[inbound] Received", { keys: Object.keys(b), contactId: b.contactId ?? b.id, hasBody: !!(b.body ?? b.message) });
     const parsed = parseInboundBody(body);
     if (!parsed) {
+      console.log("[inbound] Rejected: missing contactId or body");
       return NextResponse.json({ ok: false, error: "Missing contactId or message body" }, { status: 400 });
     }
     let { contactId, conversationId, messageBody, locationId } = parsed;
     const resolvedConversationId = await getConversationIdIfMissing(contactId, conversationId, locationId);
     if (!resolvedConversationId) {
+      console.log("[inbound] Rejected: no conversationId for contact", contactId);
       return NextResponse.json(
         { ok: false, error: "Could not determine conversationId. Add Custom Data in workflow: conversationId = {{conversation.id}} or similar." },
         { status: 400 }
@@ -292,10 +296,11 @@ export async function POST(req: Request) {
       }
     }
 
+    console.log("[inbound] Replied successfully to contact", contactId);
     return NextResponse.json({ ok: true, action: "replied" });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    console.error("[webhook/ghl/inbound]", message);
+    console.error("[webhook/ghl/inbound]", message, e);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
