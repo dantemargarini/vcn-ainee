@@ -117,10 +117,14 @@ export async function POST(req: Request) {
       await updateContact(contactId, { dnd: true }, locationId);
       const opp = await getOpportunityForContact(contactId, locationId, PIPELINE_ID);
       if (opp?.id) {
-        const stages = await getPipelineStages(locationId, PIPELINE_ID);
-        const dndStage = stages.find((s: { name: string }) => s.name === "DND");
-        if (dndStage?.id) {
-          await updateOpportunityStage(opp.id, dndStage.id, locationId);
+        try {
+          const stages = await getPipelineStages(locationId, PIPELINE_ID);
+          const dndStage = stages.find((s: { name: string }) => s.name === "DND");
+          if (dndStage?.id) {
+            await updateOpportunityStage(opp.id, dndStage.id, locationId);
+          }
+        } catch (stageErr) {
+          console.warn("[inbound] DND stage update failed (non-blocking):", stageErr instanceof Error ? stageErr.message : stageErr);
         }
       }
       await supabase.from("conversations").insert({
@@ -286,11 +290,15 @@ export async function POST(req: Request) {
         .eq("id", leadRow.id);
     }
 
-    // 10) Move opportunity to Sale in Progress when lead replies
+    // 10) Move opportunity to Sale in Progress when lead replies (best-effort; don't fail the webhook)
     if (opp?.id && currentStage !== "Sale in Progress") {
-      const sipStage = stages.find((s: { name: string }) => s.name === "Sale in Progress");
-      if (sipStage?.id) {
-        await updateOpportunityStage(opp.id, sipStage.id, locationId);
+      try {
+        const sipStage = stages.find((s: { name: string }) => s.name === "Sale in Progress");
+        if (sipStage?.id) {
+          await updateOpportunityStage(opp.id, sipStage.id, locationId);
+        }
+      } catch (stageErr) {
+        console.warn("[inbound] Sale in Progress stage update failed (non-blocking):", stageErr instanceof Error ? stageErr.message : stageErr);
       }
     }
 
