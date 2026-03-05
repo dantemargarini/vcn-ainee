@@ -161,20 +161,20 @@ export async function getOpportunityForContact(
   return Array.isArray(list) ? list[0] : null;
 }
 
-/** Move opportunity to a pipeline stage (e.g. DND). */
+/** Move opportunity to a pipeline stage (e.g. Sale in Progress, DND). Uses Update Opportunity PUT. */
 export async function updateOpportunityStage(
   opportunityId: string,
   pipelineStageId: string,
   locationId?: string
 ) {
   const loc = locationId ?? process.env.GHL_LOCATION_ID;
-  const res = await fetch(`${BASE}/opportunities/${opportunityId}/status`, {
+  const res = await fetch(`${BASE}/opportunities/${opportunityId}`, {
     method: "PUT",
     headers: getHeaders(loc),
     body: JSON.stringify({ pipelineStageId }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || `GHL update opportunity status: ${res.status}`);
+  if (!res.ok) throw new Error(data.message || data.error || `GHL update opportunity: ${res.status}`);
   return data;
 }
 
