@@ -218,15 +218,17 @@ export async function POST(req: Request) {
 
     // 6) Conversation history from GHL (filter by reset_at if set)
     const rawMessages = await getConversationMessages(conversationId, locationId);
+    const toTime = (m: Record<string, unknown>) => {
+      const v = m.createdAt ?? m.dateAdded ?? 0;
+      return new Date(typeof v === "string" || typeof v === "number" ? v : 0).getTime();
+    };
     const sorted = [...(Array.isArray(rawMessages) ? rawMessages : [])].sort(
-      (a, b) =>
-        new Date((a as Record<string, unknown>).createdAt ?? (a as Record<string, unknown>).dateAdded ?? 0).getTime() -
-        new Date((b as Record<string, unknown>).createdAt ?? (b as Record<string, unknown>).dateAdded ?? 0).getTime()
+      (a, b) => toTime(a as Record<string, unknown>) - toTime(b as Record<string, unknown>)
     );
     const messages: ConversationMessage[] = [];
     for (const m of sorted) {
       const msg = m as Record<string, unknown>;
-      const msgTime = new Date((msg.createdAt ?? msg.dateAdded ?? 0)).getTime();
+      const msgTime = toTime(msg);
       if (resetAt != null && msgTime < resetAt) continue;
       const content = (msg.body ?? msg.message ?? msg.text ?? "").toString();
       const direction = (msg.direction ?? msg.type ?? "inbound").toString().toLowerCase();

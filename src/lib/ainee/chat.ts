@@ -5,9 +5,11 @@
 import OpenAI from "openai";
 import { AINEE_SYSTEM_PROMPT } from "./system-prompt";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI(): OpenAI {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("Missing OPENAI_API_KEY in environment");
+  return new OpenAI({ apiKey: key });
+}
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -49,10 +51,6 @@ export async function generateReply(
   leadContext: LeadContext = {},
   learnedRules?: string
 ): Promise<string> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("Missing OPENAI_API_KEY in environment");
-  }
-
   const contextBlock = buildContextBlock(leadContext);
   let systemContent = contextBlock
     ? AINEE_SYSTEM_PROMPT + "\n\n" + contextBlock
@@ -71,7 +69,7 @@ export async function generateReply(
       })),
   ];
 
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAI().chat.completions.create({
     model: "gpt-4o",
     messages: openaiMessages,
     max_tokens: 500,
